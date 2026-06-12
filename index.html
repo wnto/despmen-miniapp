@@ -101,6 +101,14 @@
       timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
     }).format(new Date());
 
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('amount')) document.getElementById('amount').value = params.get('amount').replace('.', ',');
+    if (params.has('description')) document.getElementById('description').value = params.get('description');
+    if (params.has('date')) document.getElementById('date').value = params.get('date');
+    if (params.has('category')) state.category = params.get('category');
+    if (params.has('subcategory')) state.subcategory = params.get('subcategory');
+    if (params.has('method')) state.method = params.get('method');
+
     function renderChips(containerId, items, selected, onPick, filter) {
       const el = document.getElementById(containerId);
       el.innerHTML = "";
@@ -154,6 +162,7 @@
           category: state.category,        // null is allowed; bot asks via menu
           subcategory: state.subcategory,  // optional by design
           payment_method: state.method,
+          _editId: params.get('_editId') || null,
         },
       };
     }
