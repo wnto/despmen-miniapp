@@ -1,6 +1,6 @@
 // Gerado por generate-data.js — não editar manualmente
 window.DESPMEN_DATA = {
-  "generatedAt": "2026-06-12T15:48:10.109Z",
+  "generatedAt": "2026-06-12T16:27:21.305Z",
   "categories": [
     "Aplicação automática",
     "Ateliê e Oficina",
