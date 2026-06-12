@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Nova Despesa — DespMen</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="data.js"></script>
+  <style>
+    :root {
+      --bg: var(--tg-theme-bg-color, #ffffff);
+      --text: var(--tg-theme-text-color, #111111);
+      --hint: var(--tg-theme-hint-color, #888888);
+      --accent: var(--tg-theme-button-color, #2481cc);
+      --accent-text: var(--tg-theme-button-text-color, #ffffff);
+      --field: var(--tg-theme-secondary-bg-color, #f2f2f2);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 16px 16px 96px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+    }
+    h1 { font-size: 1.15rem; margin: 0 0 16px; }
+    label { display: block; font-size: 0.8rem; color: var(--hint); margin: 14px 0 4px; }
+    input {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 10px;
+      background: var(--field);
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+    }
+    input:focus { outline: 2px solid var(--accent); }
+    #amount { font-size: 1.5rem; font-weight: 600; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .chip {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: var(--field);
+      color: var(--text);
+      font-size: 0.85rem;
+      border: none;
+      cursor: pointer;
+    }
+    .chip.selected { background: var(--accent); color: var(--accent-text); }
+    .error { color: #e53935; font-size: 0.8rem; min-height: 1.1em; margin-top: 8px; }
+    /* Fallback submit button (visible only outside Telegram) */
+    #fallbackSubmit {
+      display: none;
+      width: 100%;
+      margin-top: 20px;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      background: var(--accent);
+      color: var(--accent-text);
+      font-size: 1rem;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <h1>📝 Nova despesa</h1>
+
+  <label for="amount">Valor (R$)</label>
+  <input id="amount" inputmode="decimal" placeholder="0,00" autocomplete="off" />
+
+  <label for="description">Descrição</label>
+  <input id="description" placeholder="Ex.: almoço no centro" autocomplete="off" />
+
+  <label for="date">Data do pagamento</label>
+  <input id="date" type="date" />
+
+  <label for="categoryFilter">Categoria</label>
+  <input id="categoryFilter" placeholder="Filtrar categorias…" autocomplete="off" />
+  <div id="categoryChips" class="chips"></div>
+
+  <label for="subcategoryFilter">Subcategoria (opcional)</label>
+  <input id="subcategoryFilter" placeholder="Filtrar subcategorias…" autocomplete="off" />
+  <div id="subcategoryChips" class="chips"></div>
+
+  <label>Meio de pagamento</label>
+  <div id="methodChips" class="chips"></div>
+
+  <div id="error" class="error"></div>
+  <button id="fallbackSubmit">Salvar</button>
+
+  <script>
+    const tg = window.Telegram?.WebApp;
+    const DATA = window.DESPMEN_DATA || { categories: [], subcategories: [], paymentMethods: [] };
+
+    const state = { category: null, subcategory: null, method: null };
+
+    // Default date: today in America/Sao_Paulo regardless of device timezone
+    document.getElementById("date").value = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
+
+    function renderChips(containerId, items, selected, onPick, filter) {
+      const el = document.getElementById(containerId);
+      el.innerHTML = "";
+      const f = (filter || "").toLowerCase();
+      items
+        .filter((i) => !f || i.toLowerCase().includes(f))
+        .forEach((item) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "chip" + (item === selected ? " selected" : "");
+          b.textContent = item;
+          b.onclick = () => onPick(item === selected ? null : item);
+          el.appendChild(b);
+        });
+    }
+
+    function renderAll() {
+      renderChips("categoryChips", DATA.categories, state.category,
+        (v) => { state.category = v; renderAll(); },
+        document.getElementById("categoryFilter").value);
+      renderChips("subcategoryChips", DATA.subcategories, state.subcategory,
+        (v) => { state.subcategory = v; renderAll(); },
+        document.getElementById("subcategoryFilter").value);
+      renderChips("methodChips", DATA.paymentMethods, state.method,
+        (v) => { state.method = v; renderAll(); });
+    }
+    document.getElementById("categoryFilter").addEventListener("input", renderAll);
+    document.getElementById("subcategoryFilter").addEventListener("input", renderAll);
+    renderAll();
+
+    function parseAmount(raw) {
+      // Accepts "12,34", "12.34", "1.234,56"
+      const cleaned = raw.trim().replace(/\./g, (m, i, s) => (s.includes(",") ? "" : m)).replace(",", ".");
+      const n = Number(cleaned);
+      return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+    }
+
+    function buildPayload() {
+      const amount = parseAmount(document.getElementById("amount").value);
+      const description = document.getElementById("description").value.trim();
+      const date = document.getElementById("date").value;
+      if (!amount) return { error: "Informe um valor válido." };
+      if (!date) return { error: "Informe a data." };
+      if (!state.method) return { error: "Escolha o meio de pagamento." };
+      return {
+        payload: {
+          source: "miniapp",
+          amount,
+          description: description || null,
+          payment_date: date,
+          category: state.category,        // null is allowed; bot asks via menu
+          subcategory: state.subcategory,  // optional by design
+          payment_method: state.method,
+        },
+      };
+    }
+
+    function submit() {
+      const { payload, error } = buildPayload();
+      document.getElementById("error").textContent = error || "";
+      if (error) return;
+      if (tg?.sendData) {
+        tg.sendData(JSON.stringify(payload)); // Telegram closes the app and delivers to the bot
+      } else {
+        alert("Fora do Telegram — payload:\n" + JSON.stringify(payload, null, 2));
+      }
+    }
+
+    if (tg) {
+      tg.ready();
+      tg.expand();
+      tg.MainButton.setText("Salvar despesa");
+      tg.MainButton.show();
+      tg.onEvent("mainButtonClicked", submit);
+    } else {
+      const btn = document.getElementById("fallbackSubmit");
+      btn.style.display = "block";
+      btn.onclick = submit;
+    }
+  </script>
+</body>
+</html>
