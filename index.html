@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Nova Despesa — DespMen</title>
+  <title>DespMen</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="data.js"></script>
   <style>
@@ -25,7 +25,7 @@
     }
     h1 { font-size: 1.15rem; margin: 0 0 16px; }
     label { display: block; font-size: 0.8rem; color: var(--hint); margin: 14px 0 4px; }
-    input {
+    input, textarea {
       width: 100%;
       padding: 12px;
       border: none;
@@ -34,8 +34,10 @@
       color: var(--text);
       font-size: 1rem;
       outline: none;
+      font-family: inherit;
     }
-    input:focus { outline: 2px solid var(--accent); }
+    input:focus, textarea:focus { outline: 2px solid var(--accent); }
+    textarea { resize: vertical; min-height: 64px; }
     #amount { font-size: 1.5rem; font-weight: 600; }
     .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
     .chip {
@@ -49,6 +51,16 @@
     }
     .chip.selected { background: var(--accent); color: var(--accent-text); }
     .error { color: #e53935; font-size: 0.8rem; min-height: 1.1em; margin-top: 8px; }
+    .req { color: #e53935; }
+    /* Cartão da transação (modo classificação) */
+    #txCard {
+      background: var(--field);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 8px;
+    }
+    #txCard .amount { font-size: 1.4rem; font-weight: 700; }
+    #txCard .meta { font-size: 0.9rem; color: var(--hint); margin-top: 4px; }
     /* Fallback submit button (visible only outside Telegram) */
     #fallbackSubmit {
       display: none;
@@ -62,21 +74,31 @@
       font-size: 1rem;
       font-weight: 600;
     }
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
-  <h1>📝 Nova despesa</h1>
+  <h1 id="title">📝 Nova despesa</h1>
 
-  <label for="amount">Valor (R$)</label>
-  <input id="amount" inputmode="decimal" placeholder="0,00" autocomplete="off" />
+  <!-- Cartão read-only da transação (somente no modo classificação) -->
+  <div id="txCard" class="hidden">
+    <div class="amount" id="txAmount"></div>
+    <div class="meta" id="txMeta"></div>
+  </div>
 
-  <label for="description">Descrição</label>
-  <input id="description" placeholder="Ex.: almoço no centro" autocomplete="off" />
+  <!-- Campos só do modo despesa -->
+  <div id="expenseFields">
+    <label for="amount">Valor (R$)</label>
+    <input id="amount" inputmode="decimal" placeholder="0,00" autocomplete="off" />
 
-  <label for="date">Data do pagamento</label>
-  <input id="date" type="date" />
+    <label for="description">Descrição</label>
+    <input id="description" placeholder="Ex.: almoço no centro" autocomplete="off" />
 
-  <label for="categoryFilter">Categoria</label>
+    <label for="date">Data do pagamento</label>
+    <input id="date" type="date" />
+  </div>
+
+  <label for="categoryFilter">Categoria <span id="catOpt" class="hint"></span></label>
   <input id="categoryFilter" placeholder="Filtrar categorias…" autocomplete="off" />
   <div id="categoryChips" class="chips"></div>
 
@@ -84,41 +106,92 @@
   <input id="subcategoryFilter" placeholder="Filtrar subcategorias…" autocomplete="off" />
   <div id="subcategoryChips" class="chips"></div>
 
-  <label>Meio de pagamento</label>
-  <div id="methodChips" class="chips"></div>
+  <!-- Comentário: obrigatório no modo classificação -->
+  <div id="commentBlock" class="hidden">
+    <label for="comment">Comentário <span class="req">obrigatório</span></label>
+    <textarea id="comment" placeholder="O que é esta transação? (ex.: mercado do mês, presente da Manu…)"></textarea>
+  </div>
+
+  <!-- Tag: só no modo classificação -->
+  <div id="tagBlock" class="hidden">
+    <label for="tagFilter">Tag (opcional)</label>
+    <input id="tagFilter" placeholder="Filtrar tags…" autocomplete="off" />
+    <div id="tagChips" class="chips"></div>
+  </div>
+
+  <!-- Meio de pagamento: só no modo despesa -->
+  <div id="methodBlock">
+    <label>Meio de pagamento</label>
+    <div id="methodChips" class="chips"></div>
+  </div>
 
   <div id="error" class="error"></div>
   <button id="fallbackSubmit">Salvar</button>
 
   <script>
     const tg = window.Telegram?.WebApp;
-    const DATA = window.DESPMEN_DATA || { categories: [], subcategories: [], paymentMethods: [] };
-
-    const state = { category: null, subcategory: null, method: null };
-
-    // Default date: today in America/Sao_Paulo regardless of device timezone
-    document.getElementById("date").value = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
-    }).format(new Date());
-
+    const DATA = window.DESPMEN_DATA || { categories: [], subcategories: [], tags: [], paymentMethods: [] };
     const params = new URLSearchParams(window.location.search);
-    if (params.has('amount')) document.getElementById('amount').value = params.get('amount').replace('.', ',');
-    if (params.has('description')) document.getElementById('description').value = params.get('description');
-    if (params.has('date')) document.getElementById('date').value = params.get('date');
-    if (params.has('category')) state.category = params.get('category');
-    if (params.has('subcategory')) state.subcategory = params.get('subcategory');
-    if (params.has('method')) state.method = params.get('method');
+    const MODE = params.get('mode') === 'classify' ? 'classify' : 'expense';
 
+    const state = { category: null, subcategory: null, method: null, tag: null };
+
+    const $ = (id) => document.getElementById(id);
+    const show = (id) => $(id).classList.remove('hidden');
+    const hide = (id) => $(id).classList.add('hidden');
+
+    // ── Configura layout por modo ───────────────────────────────────────────
+    if (MODE === 'classify') {
+      $('title').textContent = '🧾 Classificar transação';
+      hide('expenseFields');
+      hide('methodBlock');
+      show('txCard');
+      show('commentBlock');
+      show('tagBlock');
+
+      // Cartão read-only com os dados da transação (via params)
+      const amt = Number(params.get('amount'));
+      const ttype = params.get('ttype') || '';
+      const isCredit = /cr[eé]d/i.test(ttype) || amt > 0;
+      $('txAmount').textContent =
+        (isCredit ? '🟢 ' : '🔴 ') +
+        Math.abs(amt || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      const dateBR = (() => {
+        const m = String(params.get('date') || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+        return m ? `${m[3]}/${m[2]}/${m[1]}` : (params.get('date') || '—');
+      })();
+      $('txMeta').textContent = `${dateBR} — ${params.get('description') || '—'}`;
+
+      // Pré-preenche sugestões existentes (reabertura)
+      if (params.has('category')) state.category = params.get('category');
+      if (params.has('subcategory')) state.subcategory = params.get('subcategory');
+      if (params.has('tag')) state.tag = params.get('tag');
+      if (params.has('comment')) $('comment').value = params.get('comment');
+    } else {
+      // Default date: today in America/Sao_Paulo regardless of device timezone
+      $('date').value = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(new Date());
+
+      if (params.has('amount')) $('amount').value = params.get('amount').replace('.', ',');
+      if (params.has('description')) $('description').value = params.get('description');
+      if (params.has('date')) $('date').value = params.get('date');
+      if (params.has('category')) state.category = params.get('category');
+      if (params.has('subcategory')) state.subcategory = params.get('subcategory');
+      if (params.has('method')) state.method = params.get('method');
+    }
+
+    // ── Chips ─────────────────────────────────────────────────────────────────
     function renderChips(containerId, items, selected, onPick, filter) {
-      const el = document.getElementById(containerId);
-      el.innerHTML = "";
-      const f = (filter || "").toLowerCase();
+      const el = $(containerId);
+      el.innerHTML = '';
+      const f = (filter || '').toLowerCase();
       items
         .filter((i) => !f || i.toLowerCase().includes(f))
         .forEach((item) => {
-          const b = document.createElement("button");
-          b.type = "button";
-          b.className = "chip" + (item === selected ? " selected" : "");
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'chip' + (item === selected ? ' selected' : '');
           b.textContent = item;
           b.onclick = () => onPick(item === selected ? null : item);
           el.appendChild(b);
@@ -126,41 +199,62 @@
     }
 
     function renderAll() {
-      renderChips("categoryChips", DATA.categories, state.category,
+      renderChips('categoryChips', DATA.categories, state.category,
         (v) => { state.category = v; renderAll(); },
-        document.getElementById("categoryFilter").value);
-      renderChips("subcategoryChips", DATA.subcategories, state.subcategory,
+        $('categoryFilter').value);
+      renderChips('subcategoryChips', DATA.subcategories, state.subcategory,
         (v) => { state.subcategory = v; renderAll(); },
-        document.getElementById("subcategoryFilter").value);
-      renderChips("methodChips", DATA.paymentMethods, state.method,
-        (v) => { state.method = v; renderAll(); });
+        $('subcategoryFilter').value);
+      if (MODE === 'classify') {
+        renderChips('tagChips', DATA.tags || [], state.tag,
+          (v) => { state.tag = v; renderAll(); },
+          $('tagFilter').value);
+      } else {
+        renderChips('methodChips', DATA.paymentMethods, state.method,
+          (v) => { state.method = v; renderAll(); });
+      }
     }
-    document.getElementById("categoryFilter").addEventListener("input", renderAll);
-    document.getElementById("subcategoryFilter").addEventListener("input", renderAll);
+    $('categoryFilter').addEventListener('input', renderAll);
+    $('subcategoryFilter').addEventListener('input', renderAll);
+    if (MODE === 'classify') $('tagFilter').addEventListener('input', renderAll);
     renderAll();
 
+    // ── Payload ─────────────────────────────────────────────────────────────
     function parseAmount(raw) {
-      // Accepts "12,34", "12.34", "1.234,56"
-      const cleaned = raw.trim().replace(/\./g, (m, i, s) => (s.includes(",") ? "" : m)).replace(",", ".");
+      const cleaned = raw.trim().replace(/\./g, (m, i, s) => (s.includes(',') ? '' : m)).replace(',', '.');
       const n = Number(cleaned);
       return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
     }
 
     function buildPayload() {
-      const amount = parseAmount(document.getElementById("amount").value);
-      const description = document.getElementById("description").value.trim();
-      const date = document.getElementById("date").value;
-      if (!amount) return { error: "Informe um valor válido." };
-      if (!date) return { error: "Informe a data." };
-      if (!state.method) return { error: "Escolha o meio de pagamento." };
+      if (MODE === 'classify') {
+        const comment = $('comment').value.trim();
+        if (!comment) return { error: 'O comentário é obrigatório.' };
+        return {
+          payload: {
+            source: 'classify',
+            reqId: params.get('reqId'),
+            category: state.category,       // opcional
+            subcategory: state.subcategory, // opcional
+            comment,
+            tag: state.tag,                 // opcional (nome)
+          },
+        };
+      }
+      const amount = parseAmount($('amount').value);
+      const description = $('description').value.trim();
+      const date = $('date').value;
+      if (!amount) return { error: 'Informe um valor válido.' };
+      if (!date) return { error: 'Informe a data.' };
+      if (!state.method) return { error: 'Escolha o meio de pagamento.' };
       return {
         payload: {
-          source: "miniapp",
+          source: 'miniapp',
           amount,
           description: description || null,
           payment_date: date,
-          category: state.category,        // null is allowed; bot asks via menu
-          subcategory: state.subcategory,  // optional by design
+          category: state.category,
+          subcategory: state.subcategory,
           payment_method: state.method,
           _editId: params.get('_editId') || null,
         },
@@ -169,24 +263,26 @@
 
     function submit() {
       const { payload, error } = buildPayload();
-      document.getElementById("error").textContent = error || "";
+      $('error').textContent = error || '';
       if (error) return;
       if (tg?.sendData) {
         tg.sendData(JSON.stringify(payload)); // Telegram closes the app and delivers to the bot
       } else {
-        alert("Fora do Telegram — payload:\n" + JSON.stringify(payload, null, 2));
+        alert('Fora do Telegram — payload:\n' + JSON.stringify(payload, null, 2));
       }
     }
 
+    const mainBtnText = MODE === 'classify' ? 'Concluir classificação' : 'Salvar despesa';
     if (tg) {
       tg.ready();
       tg.expand();
-      tg.MainButton.setText("Salvar despesa");
+      tg.MainButton.setText(mainBtnText);
       tg.MainButton.show();
-      tg.onEvent("mainButtonClicked", submit);
+      tg.onEvent('mainButtonClicked', submit);
     } else {
-      const btn = document.getElementById("fallbackSubmit");
-      btn.style.display = "block";
+      const btn = $('fallbackSubmit');
+      btn.textContent = mainBtnText;
+      btn.style.display = 'block';
       btn.onclick = submit;
     }
   </script>

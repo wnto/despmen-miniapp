@@ -1,6 +1,6 @@
 // Gerado por generate-data.js — não editar manualmente
 window.DESPMEN_DATA = {
-  "generatedAt": "2026-06-12T17:46:41.943Z",
+  "generatedAt": "2026-06-13T02:49:46.429Z",
   "categories": [
     "Aplicação automática",
     "Ateliê e Oficina",
@@ -104,6 +104,16 @@ window.DESPMEN_DATA = {
     "Youtube",
     "Zizi",
     "Zona Azul"
+  ],
+  "tags": [
+    "Antonina2526",
+    "Capivara25",
+    "Panamá26",
+    "Pantanal25",
+    "Peru26",
+    "Pico do Lopo 26",
+    "PiscinaBio",
+    "SenacCostura24"
   ],
   "paymentMethods": [
     "Cartão XP",
