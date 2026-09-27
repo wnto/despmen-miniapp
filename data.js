@@ -1,6 +1,6 @@
 // Gerado por generate-data.js — não editar manualmente
 window.DESPMEN_DATA = {
-  "generatedAt": "2026-06-13T02:49:46.429Z",
+  "generatedAt": "2026-09-27T20:21:58.608Z",
   "categories": [
     "Aplicação automática",
     "Ateliê e Oficina",
@@ -110,6 +110,7 @@ window.DESPMEN_DATA = {
     "Capivara25",
     "Panamá26",
     "Pantanal25",
+    "passarinhos",
     "Peru26",
     "Pico do Lopo 26",
     "PiscinaBio",

@@ -223,7 +223,9 @@
     function parseAmount(raw) {
       const cleaned = raw.trim().replace(/\./g, (m, i, s) => (s.includes(',') ? '' : m)).replace(',', '.');
       const n = Number(cleaned);
-      return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+      // Negativo é válido: é assim que um reembolso é representado (o bot cria o
+      // lançamento espelho pelo botão ↩️ do /lista). Só zero é recusado.
+      return Number.isFinite(n) && n !== 0 ? Math.round(n * 100) / 100 : null;
     }
 
     function buildPayload() {
