@@ -1,6 +1,6 @@
 // Gerado por generate-data.js — não editar manualmente
 window.DESPMEN_DATA = {
-  "generatedAt": "2026-09-27T20:21:58.608Z",
+  "generatedAt": "2026-09-28T00:20:24.430Z",
   "categories": [
     "Aplicação automática",
     "Ateliê e Oficina",
@@ -108,6 +108,7 @@ window.DESPMEN_DATA = {
   "tags": [
     "Antonina2526",
     "Capivara25",
+    "Ilhéus26",
     "Panamá26",
     "Pantanal25",
     "passarinhos",
